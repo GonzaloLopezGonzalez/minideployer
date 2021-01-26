@@ -1,13 +1,16 @@
 <?php
 require __DIR__ . '/vendor/autoload.php';
 use phpseclib3\Net\SSH2;
+use phpseclib3\Net\SFTP;
 
 class MiniDeployer
 {
   private $serverData = [];
   private $gitData = [];
+  private $mysqlData = [];
   private $command = '';
   private $ssh;
+  private $sftp;
   private $composerAction;
   private $projectPath;
 
@@ -16,9 +19,10 @@ class MiniDeployer
     $arr_conf = parse_ini_file('config/config.ini', true);
     $this->serverData = $arr_conf['server'];
     $this->gitData = $arr_conf['git'];
+    $this->mysqlData = $arr_conf['mysql'];
 
     try {
-      $this->serverConnection();
+      $this->SSHConnection();
     } catch (Exception $e) {
       echo $e->getMessage();
     }
@@ -29,10 +33,20 @@ class MiniDeployer
     $this->ssh->exec('exit;');
   }
 
-  private function serverConnection(): bool
+  private function SFTPConnection(): bool
   {
-    $this->ssh = new SSH2( $this->serverData['ip']);
-    if ( !$this->ssh->login( $this->serverData['user'], $this->serverData['password']) ) {
+    $this->sftp = (new SFTP( $this->serverData['ip']))->login( $this->serverData['user'], $this->serverData['password']);
+    if ( !$this->sftp) {
+      throw new Exception ( 'Unable to connect to server' );
+    }
+
+    return true;
+  }
+
+  private function SSHConnection(): bool
+  {
+    $this->ssh = (new SSH2( $this->serverData['ip']))->login( $this->serverData['user'], $this->serverData['password']);
+    if ( !$this->ssh ) {
       throw new Exception ( 'Unable to connect to server' );
     }
 
@@ -41,7 +55,6 @@ class MiniDeployer
 
   public function deployProject()
   {
-    echo "Desplegando proyecto\n";
     $deployPathExists = $this->checkPathExists($this->serverData['deploy-path']);
     if (false !== strpos($deployPathExists,'No such file or directory')){
         $this->createDeployPath();
@@ -50,8 +63,23 @@ class MiniDeployer
     $this->deployFromGit();
     echo "Conectando con github\n";
     $this->ssh->exec($this->command);
+
     echo "Instalando dependencias\n";
     $this->installDependencies();
+
+    echo "Importando base de datos\n";
+    $this->importMySqlDatabase();
+  }
+
+  private function importMySqlDatabase()
+  {
+    $mysqlFileExists = file_exists($this->mysqlData['database_file']);
+    if ($mysqlFileExists && $this->SFTPConnection())
+    {
+        $this->sftp->chdir('/tmp');
+        $this->sftp->put('database.sql',file_get_contents($this->mysqlData['database_file']));
+        $res = $this->ssh->exec("mysql -hlocalhost -r -u {$this->mysqlData['user']} -p{$this->mysqlData['password']} < /tmp/database.sql");
+    }
   }
 
   private function installDependencies()
