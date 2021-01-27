@@ -79,15 +79,18 @@ class MiniDeployer
 
   private function importMySqlDatabase()
   {
-    $mysqlFileExists = file_exists($this->mysqlData['database_file']);
-    if ($mysqlFileExists && $this->SFTPConnection()){
-        $this->sftp->chdir($this->mysqlFileServerPath);
-        $this->sftp->put('database.sql',file_get_contents($this->mysqlData['database_file']));
-        $this->ssh->exec("mysql -h{$this->mysqlData['host']} -r -u {$this->mysqlData['user']} -p{$this->mysqlData['password']} < {$this->mysqlFileServerName}");
-        $this->ssh->exec("rm {$this->mysqlFileServerName}");
-    }
-    else{
-      throw new Exception ( 'Mysql File not exist or unable connect to server' );
+    if (isset($this->mysqlData))
+    {
+      $mysqlFileExists = file_exists($this->mysqlData['database_file']);
+      if ($mysqlFileExists && $this->SFTPConnection()){
+          $this->sftp->chdir($this->mysqlFileServerPath);
+          $this->sftp->put('database.sql',file_get_contents($this->mysqlData['database_file']));
+          $res = $this->ssh->exec("mysql -h{$this->mysqlData['host']} -r -u {$this->mysqlData['user']} -p{$this->mysqlData['password']} < {$this->mysqlFileServerName}");
+          $this->ssh->exec("rm {$this->mysqlFileServerName}");
+      }
+      else{
+        throw new Exception ( 'Mysql File not exist or unable connect to server' );
+      }
     }
   }
 
