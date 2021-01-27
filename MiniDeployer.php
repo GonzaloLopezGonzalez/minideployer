@@ -9,6 +9,8 @@ class MiniDeployer
   private $gitData = [];
   private $mysqlData = [];
   private $command = '';
+  private $mysqlFileServerPath = '';
+  private $mysqlFileServerName = '';
   private $ssh;
   private $sftp;
   private $composerAction;
@@ -20,6 +22,8 @@ class MiniDeployer
     $this->serverData = $arr_conf['server'];
     $this->gitData = $arr_conf['git'];
     $this->mysqlData = $arr_conf['mysql'];
+    $this->mysqlFileServerPath = '/tmp';
+    $this->mysqlFileServerName = $this->mysqlFileServerPath . '/database.sql';
 
     try {
       $this->SSHConnection();
@@ -35,8 +39,8 @@ class MiniDeployer
 
   private function SFTPConnection(): bool
   {
-    $this->sftp = (new SFTP( $this->serverData['ip']))->login( $this->serverData['user'], $this->serverData['password']);
-    if ( !$this->sftp) {
+    $this->sftp = new SFTP( $this->serverData['ip']);
+    if ( !$this->sftp->login( $this->serverData['user'], $this->serverData['password'])) {
       throw new Exception ( 'Unable to connect to server' );
     }
 
@@ -45,8 +49,8 @@ class MiniDeployer
 
   private function SSHConnection(): bool
   {
-    $this->ssh = (new SSH2( $this->serverData['ip']))->login( $this->serverData['user'], $this->serverData['password']);
-    if ( !$this->ssh ) {
+    $this->ssh = new SSH2( $this->serverData['ip']);
+    if ( !$this->ssh->login( $this->serverData['user'], $this->serverData['password']) ) {
       throw new Exception ( 'Unable to connect to server' );
     }
 
@@ -69,16 +73,20 @@ class MiniDeployer
 
     echo "Importando base de datos\n";
     $this->importMySqlDatabase();
+
+    echo 'Despliegue finalizado';
   }
 
   private function importMySqlDatabase()
   {
     $mysqlFileExists = file_exists($this->mysqlData['database_file']);
-    if ($mysqlFileExists && $this->SFTPConnection())
-    {
-        $this->sftp->chdir('/tmp');
+    if ($mysqlFileExists && $this->SFTPConnection()){
+        $this->sftp->chdir($this->mysqlFileServerPath);
         $this->sftp->put('database.sql',file_get_contents($this->mysqlData['database_file']));
-        $res = $this->ssh->exec("mysql -hlocalhost -r -u {$this->mysqlData['user']} -p{$this->mysqlData['password']} < /tmp/database.sql");
+        $res = $this->ssh->exec("mysql -h{$this->mysqlData['host']} -r -u {$this->mysqlData['user']} -p{$this->mysqlData['password']} < {$this->mysqlFileServerName}");
+    }
+    else{
+      throw new Exception ( 'Mysql File not exist or unable connect to server' );
     }
   }
 
