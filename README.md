@@ -9,3 +9,4 @@ There are two ways to import mysql:
 
 -The whole database: The sql file must contain the "CREATE DATABASE" sentence
 -If the database already exists just add the sentence "USE <databaseName>" at the beginning of sql file.
+-If database does not be to update don't include the mySql section
