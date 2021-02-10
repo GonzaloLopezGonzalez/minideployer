@@ -26,7 +26,7 @@ class MiniDeployer
     $this->mysqlFileServerName = $this->mysqlFileServerPath . '/database.sql';
 
     try {
-      $this->SSHConnection();
+      $this->createSSHConnection();
     } catch (Exception $e) {
       echo $e->getMessage();
     }
@@ -37,7 +37,7 @@ class MiniDeployer
     $this->ssh->exec('exit;');
   }
 
-  private function SFTPConnection(): bool
+  private function createSFTPConnection(): bool
   {
     $this->sftp = new SFTP( $this->serverData['ip']);
     if ( !$this->sftp->login( $this->serverData['user'], $this->serverData['password'])) {
@@ -47,7 +47,7 @@ class MiniDeployer
     return true;
   }
 
-  private function SSHConnection(): bool
+  private function createSSHConnection(): bool
   {
     $this->ssh = new SSH2( $this->serverData['ip']);
     if ( !$this->ssh->login( $this->serverData['user'], $this->serverData['password']) ) {
@@ -59,7 +59,7 @@ class MiniDeployer
 
   public function deployProject()
   {
-    $deployPathExists = $this->checkPathExists($this->serverData['deploy-path']);
+    $deployPathExists = $this->checkIfPathExists($this->serverData['deploy-path']);
     if (false !== strpos($deployPathExists,'No such file or directory')){
         $this->createDeployPath();
     }
@@ -69,7 +69,7 @@ class MiniDeployer
     $this->ssh->exec($this->command);
 
     echo "Instalando dependencias\n";
-    $this->installDependencies();
+    $this->executeComposer();
 
     echo "Importando base de datos\n";
     $this->importMySqlDatabase();
@@ -82,7 +82,7 @@ class MiniDeployer
     if (isset($this->mysqlData))
     {
       $mysqlFileExists = file_exists($this->mysqlData['database_file']);
-      if ($mysqlFileExists && $this->SFTPConnection()){
+      if ($mysqlFileExists && $this->createSFTPConnection()){
           $this->sftp->chdir($this->mysqlFileServerPath);
           $this->sftp->put('database.sql',file_get_contents($this->mysqlData['database_file']));
           $res = $this->ssh->exec("mysql -h{$this->mysqlData['host']} -r -u {$this->mysqlData['user']} -p{$this->mysqlData['password']} < {$this->mysqlFileServerName}");
@@ -94,21 +94,27 @@ class MiniDeployer
     }
   }
 
-  private function installDependencies()
+  private function setComposerParams()
   {
-    $deployPathExists = $this->checkPathExists($this->projectPath.'/composer.json');
+    $command .= '  --verbose --prefer-dist --no-interaction --optimize-autoloader';
+    if ('prod' === $this->serverData['env']){
+       $command .= '  --no-dev';
+    }
+    return $command;
+  }
+
+  private function executeComposer()
+  {
+    $deployPathExists = $this->checkIfPathExists($this->projectPath.'/composer.json');
     if (false === strpos($deployPathExists,'No such file or directory')){
        $command = 'cd '.$this->projectPath.';';
        $command .= $this->composerAction;
-       $command .= '  --verbose --prefer-dist --no-interaction --optimize-autoloader';
-       if ('prod' === $this->serverData['env']){
-          $command .= '  --no-dev';
-       }
-      $this->ssh->exec($command);
+       $command .= $this->setComposerParams();
+       $this->ssh->exec($command);
     }
   }
 
-  private function checkPathExists(string $path): string
+  private function checkIfPathExists(string $path): string
   {
     return $this->ssh->exec('cd '.$path);
   }
@@ -118,13 +124,22 @@ class MiniDeployer
     $this->command = 'mkdir '.$this->serverData['deploy-path'] . ';';
   }
 
-  private function gitPull()
+  private function createGitPullCommand()
   {
     $this->command .= 'git pull;';
+  }
+
+  private function createComposerUpdateCommand()
+  {
     $this->composerAction = 'composer update';
   }
 
-  private function gitClone()
+  private function createComposerInstallCommand()
+  {
+    $this->composerAction = 'composer install';
+  }
+
+  private function createGitCloneCommand()
   {
     $command = 'git clone';
     if (!empty($this->gitData['branch'])){
@@ -132,18 +147,19 @@ class MiniDeployer
     }
     $command .= ' '.$this->gitData['repository'];
     $this->command .= $command.';';
-    $this->composerAction = 'composer install';
   }
 
   private function deployFromGit()
   {
     $arrRepository = explode('/',$this->gitData['repository']);
     $this->projectPath = $this->serverData['deploy-path'].$arrRepository[count($arrRepository)-1];
-    $deployPathExists =  $this->checkPathExists($this->projectPath);
+    $deployPathExists =  $this->checkIfPathExists($this->projectPath);
     if (false === strpos($deployPathExists,'No such file or directory')){
-        $this->gitPull();
+        $this->createGitPullCommand();
+        $this->createComposerUpdateCommand();
     }else{
-       $this->gitClone();
+       $this->createGitCloneCommand();
+       $this->createComposerInstallCommand();
     }
   }
 }
